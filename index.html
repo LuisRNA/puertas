@@ -1,0 +1,690 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Juego de Puertas — Reemplazo vs. Sin reemplazo (Vanilla JS)</title>
+  <style>
+    :root {
+      --bg:#0b1020; --panel:#141b36; --ink:#e8ecff; --accent:#7aa2f7;
+      --ok:#a6e3a1; --warn:#ffb4a9; --door1:#7aa2f7; --door2:#a78bfa;
+      --door-grad-start:#2b3a83; --door-grad-end:#1b245c; --knob:#ffd166;
+      --door-label-bg: rgba(255,255,255,.12);
+      --instruction-glow: 0 0 0 3px rgba(166,227,161,.55), 0 0 22px rgba(166,227,161,.35), inset 0 0 0 2px rgba(255,255,255,.12);
+    }
+    html, body { height:100%; }
+    body {
+      margin:0; background:var(--bg); color:var(--ink);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial;
+      display:flex; align-items:center; justify-content:center;
+    }
+    .app { width:min(960px, 92vw); }
+    .card {
+      background:var(--panel); border:2px solid var(--accent);
+      border-radius:16px; padding:22px 18px; box-shadow: 0 10px 30px rgba(0,0,0,.25);
+    }
+    h1,h2,h3 { margin:0 0 12px 0; }
+    .center { text-align:center; }
+    .meta { font-size:14px; opacity:.85; }
+    .small { font-size:14px; }
+    .spacer { height:14px; }
+    .footer { margin-top:14px; display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
+    .field { display:flex; gap:12px; align-items:center; justify-content:center; flex-wrap:wrap; }
+
+    .btn {
+      appearance:none; border:2px solid var(--accent); background:#0f1530; color:var(--ink);
+      padding:12px 18px; border-radius:12px; font-size:18px; cursor:pointer; transition: transform .05s ease;
+    }
+    .btn:hover { transform: translateY(-1px); }
+    .btn:active { transform: translateY(0); }
+    .btn[disabled] { opacity:.5; cursor:not-allowed; }
+    .btn.secondary { border-color:#566; opacity:.9; }
+
+    label { font-size:16px; }
+    input[type="text"], input[type="number"], select, input[type="password"] {
+      background:#0f1530; color:var(--ink); border:2px solid #3b4261; border-radius:10px; padding:8px 10px; font-size:16px;
+    }
+
+    /* --- Puertas --- */
+    .doors { display:flex; gap:28px; justify-content:center; flex-wrap:wrap; margin-top:10px; }
+    .door {
+      width:180px; height:240px; position:relative; border-radius:16px; cursor:pointer;
+      border:3px solid var(--door1);
+      background: linear-gradient(160deg, var(--door-grad-start), var(--door-grad-end));
+      box-shadow: 0 8px 18px rgba(0,0,0,.35), inset 0 0 0 2px rgba(255,255,255,.04);
+      transition: transform .06s ease, box-shadow .2s ease, border-color .2s ease, filter .2s ease;
+    }
+    .door:hover { transform: translateY(-2px); filter: saturate(1.08); }
+    .door:active { transform: translateY(0); }
+    .door.alt { border-color: var(--door2); }
+
+    /* Brillo MÁS intenso (solo en instrucciones) */
+    .door.selected-instruction {
+      border-color: var(--ok);
+      box-shadow: var(--instruction-glow);
+      filter: saturate(1.1);
+    }
+
+    .door-arch { position:absolute; inset: 16px 16px auto 16px; height: 56%; border-radius: 12px 12px 40% 40% / 14px 14px 50% 50%;
+      background: radial-gradient(120px 80px at 50% 0%, rgba(255,255,255,.12), rgba(255,255,255,0) 70%),
+                  linear-gradient(180deg, rgba(255,255,255,.06), rgba(0,0,0,.12));
+      border:2px solid rgba(255,255,255,.08); }
+    .door-label { position:absolute; left:50%; transform:translateX(-50%); bottom:18px; padding:6px 12px; border-radius:999px; background: var(--door-label-bg); border:1px solid rgba(255,255,255,.14); font-weight:700; letter-spacing:.5px; }
+    .door-knob { position:absolute; right:20px; top: calc(50% + 16px); width:14px; height:14px; background: radial-gradient(circle at 30% 30%, #fff6, #0006), var(--knob); border-radius:50%; box-shadow: 0 0 0 2px rgba(0,0,0,.25), inset 0 0 0 1px rgba(255,255,255,.35); }
+
+    /* --- Avisos de feedback --- */
+    .feedback-wrap { display:flex; flex-direction:column; align-items:center; gap:8px; margin-top:10px; }
+    .feedback-symbol { font-size:110px; line-height:1; max-width:140px; max-height:140px; }
+    .points { font-size:42px; font-weight:800; letter-spacing:1px; margin-top:4px; }
+    .points.ok { color: var(--ok); }
+    .points.no { color: var(--warn); }
+
+    .example-grid { display:flex; gap:24px; justify-content:center; flex-wrap:wrap; margin-top:8px; }
+    .example-card { width:210px; padding:14px 12px; border-radius:14px; border:2px dashed rgba(255,255,255,.2); background: rgba(255,255,255,.04); }
+
+    /* --- Distribución lateral de subpuertas --- */
+    .subdoors { display:flex; justify-content:space-between; align-items:flex-start; gap:20px; margin-top:10px; }
+    .subslot { width:45%; display:flex; gap:28px; }
+    .subslot.left { justify-content:flex-start; }
+    .subslot.right { justify-content:flex-end; }
+    .subslot.empty { min-height:240px; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="card" id="screen"></div>
+  </div>
+
+  <script>
+  // ---------------------- CONFIGURACIÓN DE ENVÍO A SHEETS ----------------------
+  // 👇👇👇 Pega aquí la URL de tu Web App (Apps Script: Deploy → Web app)
+  const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxpFZiMzLo6JqMOXGyJUa0K0uGNgZyqpbU7Q_9-6N9pk3hwosVffzpBIX99ZZ_pxtM6/exec';
+  // ^ Deja la cadena vacía '' si aún no quieres enviar automáticamente.
+
+  // --- Acceso a panel privado ---
+  const ADMIN_PASS = 'GBM_Puertas';
+
+  // Envía arreglo de filas a Google Sheets con múltiples fallbacks
+  let __rowsSent = false;
+  async function sendToSheets(rows, reason='final'){
+    if (!SHEETS_URL || __rowsSent) return;
+    const body = JSON.stringify(rows);
+    try {
+      await fetch(SHEETS_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        keepalive: true,
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body
+      });
+      __rowsSent = true;
+      return;
+    } catch (e) {
+      try {
+        const blob = new Blob([body], { type: 'text/plain;charset=utf-8' });
+        if (navigator.sendBeacon(SHEETS_URL, blob)) {
+          __rowsSent = true;
+        }
+      } catch (_) {}
+    }
+  }
+
+  // Si cierran la pestaña antes de finalizar, intenta enviar lo que haya
+  window.addEventListener('pagehide', () => {
+    if (!__rowsSent && state.rows && state.rows.length) {
+      try {
+        const blob = new Blob([JSON.stringify(state.rows)], {type: 'application/json'});
+        navigator.sendBeacon(SHEETS_URL, blob);
+        __rowsSent = true;
+      } catch(_) {}
+    }
+  });
+
+  // ---------------------- Utilidades ----------------------
+  function getParam(name, fallback=null){ const url = new URL(window.location.href); const v = url.searchParams.get(name); return v !== null ? v : fallback; }
+  function shuffle(arr){ const a = arr.slice(); for (let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+  function now(){ return performance.now(); }
+  function secs(ms){ return (ms/1000).toFixed(2); }
+
+  function download(filename, content, type){ const blob=new Blob([content],{type}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=filename; a.click(); URL.revokeObjectURL(url); }
+
+  // CSV en orden específico (para descarga local opcional)
+  const CSV_HEADERS = ['Num_Ensayo','Tiempo_Global','Tiempo_ENT','Tiempo_F1','Tiempo_F2','Respuesta','Res_Correcta','Fase','Grupo','Puerta_F2','Edad','Genero','Semestre','ID','rt_primera','rt_segunda'];
+  function toCSVOrdered(rows, headers){
+    if (!rows.length) return headers.join(',');
+    const esc = v => {
+      if (v === null || v === undefined) return '';
+      const s = String(v).replaceAll('"','""');
+      return /[",\n]/.test(s) ? '"'+s+'"' : s;
+    };
+    const lines = [headers.join(',')];
+    for (const r of rows) lines.push(headers.map(h => esc(r[h])).join(','));
+    return lines.join('\n');
+  }
+
+  function doorHTML(id, label, alt=false){
+    return `
+      <button class="door ${alt?'alt':''}" id="${id}" aria-label="Puerta ${label}">
+        <span class="door-arch" aria-hidden="true"></span>
+        <span class="door-knob" aria-hidden="true"></span>
+        <span class="door-label">${label}</span>
+      </button>`;
+  }
+  function feedbackHTML(rewarded){
+    const symbol = rewarded ? '🪙' : '❌';
+    const points = rewarded ? '+1' : '+0';
+    const pointsClass = rewarded ? 'ok' : 'no';
+    return `
+      <div class="feedback-wrap" role="group" aria-label="${rewarded ? 'Recompensa' : 'Sin recompensa'}">
+        <div class="feedback-symbol" aria-hidden="true">${symbol}</div>
+        <div class="points ${pointsClass}" aria-live="polite">${points}</div>
+      </div>
+    `;
+  }
+
+  // ---------------------- Configuración experimento ----------------------
+  const URL_MODE = (getParam('mode','noreplacement').toLowerCase()==='replacement') ? 'replacement' : 'noreplacement';
+  const URL_TRIALS = Math.max(1, parseInt(getParam('trials','60')) || 60);
+  const PRACTICE_TRIALS = 10;
+  const SEQS = ['II','ID','DI','DD']; // 0..3
+
+  const state = {
+    // programa / fases
+    phase: 'main',           // 'practice' | 'main' | 'phase2'
+    programMode: URL_MODE,   // 'replacement' | 'noreplacement'
+    maxTrials: URL_TRIALS,
+
+    // Fase 2
+    phase2_forbidden: null,  // 0..3 (índice de SEQS) o null
+
+    // dinámicos
+    trial: 0,                // contador por fase
+    globalTrial: 0,          // Num_Ensayo global
+    block: 1,
+    currentTarget: null,
+    remainingTargets: [],
+    firstChoice: null,       // 'A' | 'B'
+    secondChoice: null,      // 'A1'|'A2'|'B1'|'B2'
+
+    // tiempos
+    sessionStartMs: null,    // cronómetro global
+    entStartMs: null,        // inicio ENT
+    f1StartMs: null,         // inicio F1
+    f2StartMs: null,         // inicio F2
+    trialStartMs: null,      // inicio ensayo
+    firstChoiceMs: null,     // marca de A/B
+    tmpRTPrimera: null,
+    tmpRTSegunda: null,
+
+    // datos
+    rows: [],
+
+    // Demográficos
+    edad: null,
+    genero: null,
+    semestre: null,
+    participantID: null,
+
+    // Instrucciones (brillo)
+    instr_firstChoice: null,
+    instr_secondChoice: null,
+  };
+
+  function phaseCode(){ return state.phase==='practice' ? 'ENT' : (state.phase==='main' ? 'F1' : 'F2'); }
+  function groupLabel(){ return state.programMode==='replacement' ? 'Reemplazo' : 'No_Reemplazo'; }
+  function forbiddenSeqLabel(){ return state.phase==='phase2' && state.phase2_forbidden!==null ? SEQS[state.phase2_forbidden] : '0'; }
+
+  function allowedPool(){
+    let pool = [0,1,2,3];
+    if (state.phase === 'phase2' && state.phase2_forbidden !== null){
+      pool = pool.filter(i => i !== state.phase2_forbidden);
+    }
+    return pool;
+  }
+
+  function initProgram(){
+    const pool = allowedPool();
+    if (state.programMode === 'noreplacement'){
+      state.remainingTargets = shuffle(pool);
+      state.currentTarget = state.remainingTargets[0];
+    } else {
+      state.currentTarget = pool[Math.floor(Math.random()*pool.length)];
+    }
+  }
+  function advanceOnReward(){
+    const pool = allowedPool();
+    if (state.programMode === 'noreplacement'){
+      state.remainingTargets.shift();
+      if (state.remainingTargets.length === 0){
+        state.block += 1;
+        state.remainingTargets = shuffle(pool);
+      }
+      state.currentTarget = state.remainingTargets[0];
+    } else {
+      state.currentTarget = pool[Math.floor(Math.random()*pool.length)];
+    }
+  }
+
+  // ---------------------- UI helpers ----------------------
+  const screen = document.getElementById('screen');
+  function html(strings, ...vals){ return strings.map((s,i)=>s+(i<vals.length?vals[i]:'' )).join(''); }
+
+  function subdoorsHTML(first){
+    const showA = first === 'A';
+    const showB = first === 'B';
+    const left = showA ? `${doorHTML('opt0','A1',false)}${doorHTML('opt1','A2',true)}` : '';
+    const right = showB ? `${doorHTML('opt0','B1',false)}${doorHTML('opt1','B2',true)}` : '';
+    return `
+      <div class="subdoors">
+        <div class="subslot left ${showA?'':'empty'}">${left}</div>
+        <div class="subslot right ${showB?'':'empty'}">${right}</div>
+      </div>
+    `;
+  }
+
+  // ---------------------- Pantallas ----------------------
+
+  // (1) Demográficos
+  function renderDemographics(){
+    screen.innerHTML = html`
+      <h1 class="center">¡Bienvenida/o al juego de puertas!</h1>
+      <div class="spacer"></div>
+      <div class="field" style="gap:14px;">
+        <label>Edad:
+          <input id="edad" type="number" min="1" max="99" placeholder="18" required>
+        </label>
+        <label>Semestre:
+          <select id="semestre" required>
+            <option value="" selected disabled>Selecciona</option>
+            <option value="1ero">1ero</option>
+            <option value="3ro">3ro</option>
+            <option value="5to">5to</option>
+            <option value="7mo">7mo</option>
+            <option value="otro">otro</option>
+          </select>
+        </label>
+        <label>Otro (Semestre):
+          <input id="semestre_otro" type="text" placeholder="Especifica" style="display:none;">
+        </label>
+      </div>
+      <div class="spacer"></div>
+      <div class="field" style="gap:14px;">
+        <label>Género:
+          <select id="genero" required>
+            <option value="" selected disabled>Selecciona</option>
+            <option value="masculino">masculino</option>
+            <option value="femenino">femenino</option>
+            <option value="otro">otro</option>
+          </select>
+        </label>
+        <label>Otro (Género):
+          <input id="genero_otro" type="text" placeholder="Especifica" style="display:none;">
+        </label>
+      </div>
+      <div class="spacer"></div>
+      <div class="footer">
+        <button class="btn" id="continuar" disabled>Continuar</button>
+      </div>
+      <p class="center small meta">* Todos los campos son obligatorios. “Otro” requiere especificar.</p>
+    `;
+
+    const edad = document.getElementById('edad');
+    const semestre = document.getElementById('semestre');
+    const semestre_otro = document.getElementById('semestre_otro');
+    const genero = document.getElementById('genero');
+    const genero_otro = document.getElementById('genero_otro');
+    const btn = document.getElementById('continuar');
+
+    function toggleOtros(){
+      semestre_otro.style.display = (semestre.value === 'otro') ? '' : 'none';
+      genero_otro.style.display  = (genero.value  === 'otro') ? '' : 'none';
+    }
+    function isValid(){
+      const e = parseInt(edad.value,10);
+      const sem = semestre.value;
+      const gen = genero.value;
+      const semOkExtra = (sem !== 'otro') || (document.getElementById('semestre_otro').value.trim().length > 0);
+      const genOkExtra = (gen !== 'otro') || (document.getElementById('genero_otro').value.trim().length > 0);
+      const edadOk = Number.isFinite(e) && e >= 1 && e <= 99;
+      return edadOk && !!sem && !!gen && semOkExtra && genOkExtra;
+    }
+    function updateUI(){ toggleOtros(); btn.disabled = !isValid(); }
+    [edad, semestre, semestre_otro, genero, genero_otro].forEach(el => { el.addEventListener('input', updateUI); el.addEventListener('change', updateUI); });
+    updateUI();
+
+    btn.addEventListener('click', () => {
+      if (!isValid()) return;
+      state.edad = parseInt(edad.value,10);
+      state.semestre = semestre.value === 'otro' ? semestre_otro.value.trim() : semestre.value;
+      state.genero = genero.value === 'otro' ? genero_otro.value.trim() : genero.value;
+      state.participantID = Math.floor(100000 + Math.random()*900000); // 6 dígitos
+
+      renderInstructionsAB();
+    });
+  }
+
+  // (2) Instrucciones: elegir A o B (con brillo)
+  function renderInstructionsAB(){
+    screen.innerHTML = html`
+      <h1 class="center">Instrucciones</h1>
+      <p class="center">Tu objetivo es encontrar la mayor cantidad de monedas, las cuales se encontrarán en una de las 4 posibles puertas.</p>
+      <p class="center">Primero tendrás que escoger entre la puerta de la izquierda o la derecha</p>
+      <p class="center"><b>Escoge una de las puertas</b></p>
+      <div class="doors">
+        ${doorHTML('doorA','A', false)}
+        ${doorHTML('doorB','B', true)}
+      </div>
+      <div class="footer"><button class="btn" id="next" disabled>Continuar</button></div>
+    `;
+    const doorA = document.getElementById('doorA');
+    const doorB = document.getElementById('doorB');
+    const next  = document.getElementById('next');
+    function selectDoor(el, label){
+      [doorA, doorB].forEach(d => d.classList.remove('selected-instruction'));
+      el.classList.add('selected-instruction'); state.instr_firstChoice = label; next.disabled = false;
+    }
+    doorA.onclick = () => selectDoor(doorA, 'A');
+    doorB.onclick = () => selectDoor(doorB, 'B');
+    next.onclick = () => renderInstructionsSubdoor();
+  }
+
+  // (3) Instrucciones: subpuertas laterales (con brillo)
+  function renderInstructionsSubdoor(){
+    const first = state.instr_firstChoice || 'A';
+    screen.innerHTML = html`
+      <h1 class="center">Instrucciones</h1>
+      <p class="center">Después de haber escogido una puerta principal, tendrás que escoger entre otras dos opciones</p>
+      <p class="center"><b>Ahora, escoge una subpuerta</b></p>
+      ${subdoorsHTML(first)}
+      <div class="footer"><button class="btn" id="go" disabled>Continuar</button></div>
+    `;
+    const opt0 = document.getElementById('opt0');
+    const opt1 = document.getElementById('opt1');
+    const go   = document.getElementById('go');
+    function selectSub(el, label){
+      [opt0, opt1].forEach(d => d && d.classList.remove('selected-instruction'));
+      el.classList.add('selected-instruction'); state.instr_secondChoice = label; go.disabled = false;
+    }
+    if (opt0) opt0.onclick = () => selectSub(opt0, first==='A'?'A1':'B1');
+    if (opt1) opt1.onclick = () => selectSub(opt1, first==='A'?'A2':'B2');
+    go.onclick = () => renderInstructionsFeedback();
+  }
+
+  // (4) Instrucciones: ejemplos de feedback
+  function renderInstructionsFeedback(){
+    screen.innerHTML = html`
+      <h1 class="center">Instrucciones</h1>
+      <p class="center">Si la puerta es la correcta, saldrá una moneda. En caso contrario, saldrá una cruz roja</p>
+      <p class="center">Después, volverás a las puertas principales</p>
+      <div class="example-grid">
+        <div class="example-card">${feedbackHTML(true)}</div>
+        <div class="example-card">${feedbackHTML(false)}</div>
+      </div>
+      <div class="footer"><button class="btn" id="toNotice">Continuar</button></div>
+    `;
+    document.getElementById('toNotice').onclick = () => renderNotice();
+  }
+
+  // (5) Aviso: elegir Instrucciones o Prueba
+  function renderNotice(){
+    screen.innerHTML = html`
+      <h1 class="center">Aviso</h1>
+      <p class="center">A continuación, podrás tener unos juegos de prueba antes de pasar al verdadero. O puedes regresar a las instrucciones</p>
+      <p class="center"><b>¿Deseas continuar, o regresar a las instrucciones?</b></p>
+      <div class="footer">
+        <button class="btn secondary" id="btnInstr">Instrucciones</button>
+        <button class="btn" id="btnPractice">Prueba</button>
+      </div>
+    `;
+    document.getElementById('btnInstr').onclick = () => renderInstructionsAB();
+    document.getElementById('btnPractice').onclick = () => startPractice();
+  }
+
+  // ---------- PRÁCTICA ----------
+  function startPractice(){
+    state.phase = 'practice';
+    state.programMode = URL_MODE; // práctica usa el mismo modo del URL
+    state.maxTrials = PRACTICE_TRIALS;
+    state.trial = 0; state.block = 1;
+    if (state.sessionStartMs === null) state.sessionStartMs = now(); // inicia cronómetro global
+    state.entStartMs = now(); // inicia cronómetro ENT
+    initProgram(); renderFirst();
+  }
+
+  // ---------- FASE 1 ----------
+  function startMain(){
+    state.phase = 'main';
+    state.programMode = URL_MODE;
+    state.maxTrials = URL_TRIALS;
+    state.trial = 0; state.block = 1;
+    if (state.sessionStartMs === null) state.sessionStartMs = now(); // por si saltaron práctica
+    state.f1StartMs = now(); // inicia cronómetro F1
+    initProgram(); renderFirst();
+  }
+
+  // Aviso antes de Fase 2
+  function renderPhase2Notice(){
+    screen.innerHTML = html`
+      <h1 class="center">Aviso</h1>
+      <p class="center">Ahora se agregó una pista para facilitar que ganes puntos, deberás descubrirla por tu cuenta</p>
+      <p class="center">Consigue la mayor cantidad de puntos. ¡Suerte!</p>
+      <p class="center">Oprime Continuar para iniciar</p>
+      <div class="footer"><button class="btn" id="goPhase2">Continuar</button></div>
+    `;
+    document.getElementById('goPhase2').onclick = () => startPhase2();
+  }
+
+  // ---------- FASE 2 ----------
+  function startPhase2(){
+    state.phase = 'phase2';
+    state.programMode = URL_MODE;
+    state.maxTrials = URL_TRIALS;  // mismo número que F1
+    state.trial = 0; state.block = 1;
+    state.phase2_forbidden = Math.floor(Math.random()*4); // 0..3
+    state.f2StartMs = now(); // inicia cronómetro F2
+    initProgram(); renderFirst();
+  }
+
+  // (6) Ensayo – Paso 1
+  function renderFirst(){
+    state.trial += 1;
+    state.firstChoice = null; state.secondChoice = null;
+    state.trialStartMs = now();      // inicio del ensayo
+    state.firstChoiceMs = null;
+    state.tmpRTPrimera = null;       // limpiar RTs
+    state.tmpRTSegunda = null;
+
+    screen.innerHTML = html`
+      ${state.phase==='practice' ? '<h2 class="center">Prueba</h2>' : ''}
+      <h2 class="center">Elige una puerta principal</h2>
+      <div class="doors">
+        ${doorHTML('A','A', false)}
+        ${doorHTML('B','B', true)}
+      </div>
+    `;
+
+    document.getElementById('A').onclick = () => {
+      if (state.tmpRTPrimera===null) state.tmpRTPrimera = secs(now() - state.trialStartMs);
+      state.firstChoice='A'; state.firstChoiceMs = now();
+      setTimeout(renderSecond, 120);
+    };
+    document.getElementById('B').onclick = () => {
+      if (state.tmpRTPrimera===null) state.tmpRTPrimera = secs(now() - state.trialStartMs);
+      state.firstChoice='B'; state.firstChoiceMs = now();
+      setTimeout(renderSecond, 120);
+    };
+  }
+
+  // (7) Ensayo – Paso 2 (subpuertas laterales)
+  function renderSecond(){
+    const first = state.firstChoice;
+    screen.innerHTML = html`
+      ${state.phase==='practice' ? '<h2 class="center">Prueba</h2>' : ''}
+      <h2 class="center">Ahora elige una sub-puerta</h2>
+      <p class="center meta">Elegiste: <b>${first}</b></p>
+      ${subdoorsHTML(first)}
+    `;
+
+    const opt0 = document.getElementById('opt0');
+    const opt1 = document.getElementById('opt1');
+    const label0 = first==='A' ? 'A1' : 'B1';
+    const label1 = first==='A' ? 'A2' : 'B2';
+
+    if (opt0) opt0.onclick = () => {
+      if (state.firstChoiceMs) state.tmpRTSegunda = secs(now() - state.firstChoiceMs);
+      state.secondChoice = label0; setTimeout(renderFeedback, 120);
+    };
+    if (opt1) opt1.onclick = () => {
+      if (state.firstChoiceMs) state.tmpRTSegunda = secs(now() - state.firstChoiceMs);
+      state.secondChoice = label1; setTimeout(renderFeedback, 120);
+    };
+  }
+
+  // (8) Feedback + registro
+  function renderFeedback(){
+    const idx = (state.firstChoice==='A') ? (state.secondChoice==='A1' ? 0 : 1) : (state.secondChoice==='B1' ? 2 : 3);
+    const seq = SEQS[idx];
+    const target = SEQS[state.currentTarget];
+    const rewarded = (idx === state.currentTarget);
+
+    if (rewarded) advanceOnReward();
+
+    if (state.sessionStartMs === null) state.sessionStartMs = now(); // seguridad
+    const tGlobal = secs(now() - state.sessionStartMs);
+    const phase = phaseCode();
+    const tENT = (phase==='ENT'  && state.entStartMs) ? secs(now() - state.entStartMs) : '0';
+    const tF1  = (phase==='F1'   && state.f1StartMs)  ? secs(now() - state.f1StartMs)  : '0';
+    const tF2  = (phase==='F2'   && state.f2StartMs)  ? secs(now() - state.f2StartMs)  : '0';
+
+    state.globalTrial += 1;
+    state.rows.push({
+      Num_Ensayo: state.globalTrial,
+      Tiempo_Global: tGlobal,
+      Tiempo_ENT: tENT,
+      Tiempo_F1: tF1,
+      Tiempo_F2: tF2,
+      Respuesta: seq,
+      Res_Correcta: target,
+      Fase: phase,
+      Grupo: groupLabel(),
+      Puerta_F2: forbiddenSeqLabel(),
+      Edad: state.edad,
+      Genero: state.genero,
+      Semestre: state.semestre,
+      ID: state.participantID,
+      rt_primera: state.tmpRTPrimera ?? '',
+      rt_segunda: state.tmpRTSegunda ?? ''
+    });
+
+    screen.innerHTML = html`
+      ${feedbackHTML(rewarded)}
+      <div class="footer">
+        <button class="btn" id="next">
+          ${state.trial < state.maxTrials ? 'Continuar'
+            : (state.phase==='practice' ? 'Terminar prueba'
+            : (state.phase==='main' ? 'Continuar'
+            : 'Finalizar'))}
+        </button>
+      </div>
+    `;
+    document.getElementById('next').onclick = () => {
+      if (state.trial < state.maxTrials) {
+        renderFirst();
+      } else {
+        if (state.phase === 'practice') {
+          renderPracticeEnd();
+        } else if (state.phase === 'main') {
+          renderPhase2Notice();
+        } else {
+          renderFinalEnd(); // envía datos y muestra resumen final
+        }
+      }
+    };
+  }
+
+  // (9) Fin de PRÁCTICA
+  function renderPracticeEnd(){
+    const got = state.rows.filter(r => r.Fase==='ENT' && r.Respuesta===r.Res_Correcta).length;
+    screen.innerHTML = html`
+      <h2 class="center">Fin de la prueba</h2>
+      <p class="center">Monedas obtenidas: <b>${got}</b></p>
+      <div class="footer"><button class="btn" id="startMain">Empezar</button></div>
+    `;
+    document.getElementById('startMain').onclick = () => startMain();
+  }
+
+  // (10) Fin TOTAL: envía y luego muestra solo el resumen (sin reinicio ni descargas)
+  function renderFinalEnd(){
+    sendToSheets(state.rows, 'final'); // intentará enviar (si configuraste SHEETS_URL)
+    renderFinalSummary();              // pantalla final sin opciones
+  }
+
+  function renderFinalSummary(){
+    const gotF1 = state.rows.filter(r => r.Fase==='F1' && r.Respuesta===r.Res_Correcta).length;
+    const gotF2 = state.rows.filter(r => r.Fase==='F2' && r.Respuesta===r.Res_Correcta).length;
+
+    screen.innerHTML = html`
+      <h2 class="center">Fin</h2>
+      <p class="center">Monedas obtenidas en la primera parte: <b>${gotF1}</b></p>
+      <p class="center">Monedas obtenidas en la segunda parte: <b>${gotF2}</b></p>
+      <div class="footer">
+        <button class="btn" id="admin">Área de datos</button>
+      </div>
+      <p class="center small meta">* Acceso privado para quien recolecta los datos.</p>
+    `;
+    document.getElementById('admin').onclick = () => renderAdminGate();
+  }
+
+  // (11) Puerta de acceso (contraseña) al panel de descargas
+  function renderAdminGate(){
+    screen.innerHTML = html`
+      <h2 class="center">Área de datos (privada)</h2>
+      <p class="center small">Ingresa la contraseña para continuar.</p>
+      <div class="footer">
+        <input id="pass" type="password" placeholder="Contraseña" />
+        <button class="btn" id="go">Entrar</button>
+        <button class="btn secondary" id="back">Volver</button>
+      </div>
+      <p id="err" class="center small" style="color: var(--warn); display:none;">Contraseña incorrecta.</p>
+    `;
+    const pass = document.getElementById('pass');
+    const err  = document.getElementById('err');
+    document.getElementById('go').onclick = () => {
+      if (pass.value === ADMIN_PASS) {
+        renderAdminPanel();
+      } else {
+        err.style.display = 'block';
+        pass.value = '';
+        pass.focus();
+      }
+    };
+    document.getElementById('back').onclick = () => renderFinalSummary();
+    pass.addEventListener('keydown', (e)=>{ if(e.key==='Enter') document.getElementById('go').click(); });
+  }
+
+  // (12) Panel privado con descargas
+  function renderAdminPanel(){
+    screen.innerHTML = html`
+      <h2 class="center">Panel de datos</h2>
+      <div class="footer">
+        <button class="btn" id="dlcsv">Descargar CSV</button>
+        <button class="btn secondary" id="dljson">Descargar JSON</button>
+        <button class="btn" id="back">Volver</button>
+      </div>
+      <p class="center small meta">* Este panel no es visible para participantes sin contraseña.</p>
+    `;
+    document.getElementById('dlcsv').onclick = () => {
+      const csv = toCSVOrdered(state.rows, CSV_HEADERS);
+      download('datos_puertas.csv', csv, 'text/csv;charset=utf-8');
+    };
+    document.getElementById('dljson').onclick = () => {
+      download('datos_puertas.json', JSON.stringify(state.rows,null,2), 'application/json');
+    };
+    document.getElementById('back').onclick = () => renderFinalSummary();
+  }
+
+  // ---------------------- Inicio ----------------------
+  window.addEventListener('load', () => { renderDemographics(); });
+  </script>
+</body>
+</html>
