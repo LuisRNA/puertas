@@ -183,10 +183,20 @@
   }
 
   // ---------------------- Configuración experimento ----------------------
+  // Lee por URL qué puerta prohibir en Fase 2 (opcional)
+  // Acepta: II, ID, DI, DD (y también A1, A2, B1, B2).
+  const URL_FORBID = (getParam('forbid', '') || '').toUpperCase().trim();
   const URL_MODE = (getParam('mode','noreplacement').toLowerCase()==='replacement') ? 'replacement' : 'noreplacement';
   const URL_TRIALS = Math.max(1, parseInt(getParam('trials','60')) || 60);
   const PRACTICE_TRIALS = 10;
   const SEQS = ['II','ID','DI','DD']; // 0..3
+
+  // Devuelve 0..3 para II,ID,DI,DD o null si es inválido
+function forbidIndexFromParam(val){
+  if (!val) return null;
+  const map = { II:0, ID:1, DI:2, DD:3, A1:0, A2:1, B1:2, B2:3 };
+  return (val in map) ? map[val] : null;
+}
 
   const state = {
     // programa / fases
@@ -480,7 +490,11 @@
     state.programMode = URL_MODE;
     state.maxTrials = URL_TRIALS;  // mismo número que F1
     state.trial = 0; state.block = 1;
-    state.phase2_forbidden = Math.floor(Math.random()*4); // 0..3
+    //state.phase2_forbidden = Math.floor(Math.random()*4); // 0..3
+    const forcedIdx = forbidIndexFromParam(URL_FORBID);
+    state.phase2_forbidden = (forcedIdx !== null)
+      ? forcedIdx
+      : Math.floor(Math.random() * 4);
     state.f2StartMs = now(); // inicia cronómetro F2
     initProgram(); renderFirst();
   }
@@ -688,3 +702,4 @@
   </script>
 </body>
 </html>
+
