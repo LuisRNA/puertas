@@ -9,14 +9,19 @@
       --bg:#0b1020; --panel:#141b36; --ink:#e8ecff; --accent:#7aa2f7;
       --ok:#a6e3a1; --warn:#ffb4a9;
 
-      /* Madera */
+      /* Paleta madera (Prueba + Fase 1) */
       --door-border:#8a6e4b;
       --wood1:#7a4f2a;
       --wood2:#5b3a1c;
       --wood-sheen:rgba(255,255,255,.06);
       --knob:#c8ccd4;
-      --door-label-bg: rgba(255,255,255,0);
 
+      /* Paleta Fase 2 (rojo amigable) */
+      --p2-border:#d07a7a;
+      --p2-wood1:#c65d5d;   /* rojo suave */
+      --p2-wood2:#9e3f3f;   /* rojo más profundo */
+
+      --door-label-bg: rgba(255,255,255,0);
       --instruction-glow: 0 0 0 3px rgba(166,227,161,.55), 0 0 22px rgba(166,227,161,.35), inset 0 0 0 2px rgba(255,255,255,.12);
     }
     html, body { height:100%; }
@@ -52,7 +57,7 @@
       background:#0f1530; color:var(--ink); border:2px solid #3b4261; border-radius:10px; padding:8px 10px; font-size:16px;
     }
 
-    /* Puertas (mismas para todas) */
+    /* === Puertas (base: madera para instrucciones, Prueba y Fase 1) === */
     .doors { display:flex; gap:28px; justify-content:center; flex-wrap:wrap; margin-top:10px; perspective: 900px; }
     .door {
       width:180px; height:240px; position:relative; border-radius:16px; cursor:pointer;
@@ -90,7 +95,15 @@
     .door-label { display:none; }
     .door[disabled] { cursor:default; opacity: .98; }
 
-    /* Animación de apertura (ligeramente más larga) */
+    /* === Tema Fase 2 (rojo): override de la puerta cuando body tiene la clase === */
+    body.phase2-theme .door {
+      border-color: var(--p2-border);
+      background:
+        linear-gradient(160deg, var(--p2-wood1), var(--p2-wood2)),
+        linear-gradient(180deg, var(--wood-sheen), rgba(0,0,0,.10));
+    }
+
+    /* Animación de apertura */
     .door.opening { animation: doorOpen 700ms ease forwards; pointer-events: none; }
     @keyframes doorOpen {
       0%   { transform: translateY(-2px) rotateY(0deg); }
@@ -158,7 +171,7 @@
   const URL_TRIALS=Math.max(1, parseInt(getParam('trials','60'))||60);
   const PRACTICE_TRIALS=10;
   const SEQS=['II','ID','DI','DD'];
-  const DOOR_ANIM_MS=700; // ← alargada un poco
+  const DOOR_ANIM_MS=700;
 
   // Fase 2: forbid por URL
   const URL_FORBID=(getParam('forbid','')||'').toUpperCase().trim();
@@ -176,7 +189,7 @@
     rows:[],
     edad:null, genero:null, semestre:null, participantID:null,
     instr_firstChoice:null, instr_secondChoice:null,
-    coinsF1:0, coinsF2:0, // contadores visibles para F1/F2
+    coinsF1:0, coinsF2:0,
   };
 
   function phaseCode(){ return state.phase==='practice'?'ENT':(state.phase==='main'?'F1':'F2'); }
@@ -201,6 +214,12 @@
   function coinLine(){ if(state.phase==='main') return `<p class="center meta">Monedas obtenidas: <b>${state.coinsF1}</b></p>`;
                       if(state.phase==='phase2') return `<p class="center meta">Monedas obtenidas: <b>${state.coinsF2}</b></p>`;
                       return ''; }
+
+  // ===== Tema por fase: aplica clase en <body> cuando sea Fase 2 =====
+  function applyPhaseTheme(){
+    const isP2 = (state.phase === 'phase2');
+    document.body.classList.toggle('phase2-theme', isP2);
+  }
 
   /* ====== Pantallas ====== */
 
@@ -262,8 +281,11 @@
     });
   }
 
-  // (2) Instrucciones: A/B (permitir cambiar antes de continuar)
+  // (2) Instrucciones: A/B
   function renderInstructionsAB(){
+    // Instrucciones no usan tema Fase 2
+    document.body.classList.remove('phase2-theme');
+
     screen.innerHTML=html`
       <h1 class="center">Instrucciones</h1>
       <p class="center">Tu objetivo es encontrar la mayor cantidad de monedas, las cuales se encontrarán en una de las 4 posibles puertas.</p>
@@ -292,8 +314,10 @@
     next.onclick=()=>renderInstructionsSubdoor();
   }
 
-  // (3) Instrucciones: subpuertas (permitir cambiar antes de continuar)
+  // (3) Instrucciones: subpuertas
   function renderInstructionsSubdoor(){
+    document.body.classList.remove('phase2-theme');
+
     const first=state.instr_firstChoice||'A';
     screen.innerHTML=html`
       <h1 class="center">Instrucciones</h1>
@@ -305,7 +329,7 @@
     const opt0=document.getElementById('opt0');
     const opt1=document.getElementById('opt1');
     const go=document.getElementById('go');
-    let selection=null; // label
+    let selection=null;
 
     function setSel(which, label){
       selection=label; state.instr_secondChoice=label;
@@ -320,6 +344,8 @@
 
   // (4) Instrucciones: feedback
   function renderInstructionsFeedback(){
+    document.body.classList.remove('phase2-theme');
+
     screen.innerHTML=html`
       <h1 class="center">Instrucciones</h1>
       <p class="center">Si la puerta es la correcta, saldrá una moneda. En caso contrario, saldrá una cruz roja</p>
@@ -335,6 +361,8 @@
 
   // (5) Aviso
   function renderNotice(){
+    document.body.classList.remove('phase2-theme');
+
     screen.innerHTML=html`
       <h1 class="center">Aviso</h1>
       <p class="center">A continuación, podrás tener unos juegos de prueba antes de pasar al verdadero. O puedes regresar a las instrucciones</p>
@@ -356,6 +384,8 @@
     state.trial=0; state.block=1;
     if(state.sessionStartMs===null) state.sessionStartMs=now();
     state.entStartMs=now();
+
+    applyPhaseTheme(); // ← asegura tema madera (sin clase phase2-theme)
     initProgram(); renderFirst();
   }
 
@@ -365,14 +395,17 @@
     state.programMode=URL_MODE;
     state.maxTrials=URL_TRIALS;
     state.trial=0; state.block=1;
-    state.coinsF1=0; // reset contador visible
+    state.coinsF1=0;
     if(state.sessionStartMs===null) state.sessionStartMs=now();
     state.f1StartMs=now();
+
+    applyPhaseTheme(); // ← madera
     initProgram(); renderFirst();
   }
 
   // Aviso Fase 2
   function renderPhase2Notice(){
+    document.body.classList.remove('phase2-theme'); // aún no estamos en Fase 2
     screen.innerHTML=html`
       <h1 class="center">Aviso</h1>
       <p class="center">Ahora se agregó una pista para facilitar que ganes puntos, deberás descubrirla por tu cuenta</p>
@@ -389,10 +422,12 @@
     state.programMode=URL_MODE;
     state.maxTrials=URL_TRIALS;
     state.trial=0; state.block=1;
-    state.coinsF2=0; // reset contador visible
+    state.coinsF2=0;
     const forcedIdx=forbidIndexFromParam(URL_FORBID);
     state.phase2_forbidden=(forcedIdx!==null)?forcedIdx:Math.floor(Math.random()*4);
     state.f2StartMs=now();
+
+    applyPhaseTheme(); // ← activa clase phase2-theme (rojo)
     initProgram(); renderFirst();
   }
 
@@ -582,5 +617,3 @@
   </script>
 </body>
 </html>
-
-
