@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Juego de Puertas</title>
+  <title>Juego de Puertas </title>
   <style>
     :root {
       --bg:#0b1020; --panel:#141b36; --ink:#e8ecff; --accent:#7aa2f7;
@@ -18,8 +18,8 @@
 
       /* Paleta Fase 2 (rojo amigable) */
       --p2-border:#d07a7a;
-      --p2-wood1:#c65d5d;   /* rojo suave */
-      --p2-wood2:#9e3f3f;   /* rojo más profundo */
+      --p2-wood1:#c65d5d;
+      --p2-wood2:#9e3f3f;
 
       --door-label-bg: rgba(255,255,255,0);
       --instruction-glow: 0 0 0 3px rgba(166,227,161,.55), 0 0 22px rgba(166,227,161,.35), inset 0 0 0 2px rgba(255,255,255,.12);
@@ -53,9 +53,10 @@
     .btn.secondary { border-color:#566; opacity:.9; }
 
     label { font-size:16px; }
-    input[type="text"], input[type="number"], select, input[type="password"] {
+    input[type="text"], input[type="number"], select, input[type="password"], textarea {
       background:#0f1530; color:var(--ink); border:2px solid #3b4261; border-radius:10px; padding:8px 10px; font-size:16px;
     }
+    textarea { width:min(680px, 86vw); resize:vertical; }
 
     /* === Puertas (base: madera para instrucciones, Prueba y Fase 1) === */
     .doors { display:flex; gap:28px; justify-content:center; flex-wrap:wrap; margin-top:10px; perspective: 900px; }
@@ -95,7 +96,7 @@
     .door-label { display:none; }
     .door[disabled] { cursor:default; opacity: .98; }
 
-    /* === Tema Fase 2 (rojo): override de la puerta cuando body tiene la clase === */
+    /* === Tema Fase 2 (rojo) === */
     body.phase2-theme .door {
       border-color: var(--p2-border);
       background:
@@ -127,6 +128,20 @@
     .subslot.left { justify-content:flex-start; }
     .subslot.right { justify-content:flex-end; }
     .subslot.empty { min-height:240px; }
+
+    /* Botones de selección (Sí/No / Todas) */
+    .choices { display:flex; gap:12px; justify-content:center; flex-wrap:wrap; margin:10px 0; }
+    .choice {
+      appearance:none; border:2px solid #3b4261; background:#0f1530; color:var(--ink);
+      padding:10px 16px; border-radius:12px; font-size:18px; cursor:pointer;
+      transition: box-shadow .2s ease, border-color .2s ease, transform .05s ease;
+    }
+    .choice:hover { transform: translateY(-1px); }
+    .choice.selected {
+      border-color: var(--ok);
+      box-shadow: var(--instruction-glow);
+      filter: saturate(1.04);
+    }
   </style>
 </head>
 <body>
@@ -151,7 +166,7 @@
   function now(){ return performance.now(); }
   function secs(ms){ return (ms/1000).toFixed(2); }
   function download(filename, content, type){ const blob=new Blob([content],{type}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=filename; a.click(); URL.revokeObjectURL(url); }
-  const CSV_HEADERS=['Num_Ensayo','Tiempo_Global','Tiempo_ENT','Tiempo_F1','Tiempo_F2','Respuesta','Res_Correcta','Fase','Grupo','Puerta_F2','Edad','Genero','Semestre','ID','rt_primera','rt_segunda'];
+  const CSV_HEADERS=['Num_Ensayo','Tiempo_Global','Tiempo_ENT','Tiempo_F1','Tiempo_F2','Respuesta','Res_Correcta','Fase','Grupo','Puerta_F2','Edad','Genero','Semestre','ID','rt_primera','rt_segunda','Detecto_Regla','Regla_Texto','Detecto_Estrategia','Estrategia_Texto','Mas_Monedas_F1','Menos_Monedas_F1','Mas_Monedas_F2','Menos_Monedas_F2','Comentario'];
   function toCSVOrdered(rows, headers){ if(!rows.length) return headers.join(','); const esc=v=>{ if(v===null||v===undefined) return ''; const s=String(v).replaceAll('"','""'); return /[",\n]/.test(s)?'"'+s+'"':s; }; const lines=[headers.join(',')]; for(const r of rows) lines.push(headers.map(h=>esc(r[h])).join(',')); return lines.join('\n'); }
 
   /* ====== Componentes ====== */
@@ -168,7 +183,7 @@
 
   /* ====== Config experimento ====== */
   const URL_MODE=(getParam('mode','noreplacement').toLowerCase()==='replacement')?'replacement':'noreplacement';
-  const URL_TRIALS=Math.max(1, parseInt(getParam('trials','60'))||60);
+  const URL_TRIALS=Math.max(1, parseInt(getParam('trials','40'))||40);
   const PRACTICE_TRIALS=10;
   const SEQS=['II','ID','DI','DD'];
   const DOOR_ANIM_MS=700;
@@ -190,6 +205,16 @@
     edad:null, genero:null, semestre:null, participantID:null,
     instr_firstChoice:null, instr_secondChoice:null,
     coinsF1:0, coinsF2:0,
+    // Cuestionario final
+    postRuleDetected:null,     // 'Si' | 'No'
+    postRuleText:'',
+    postStrategyDetected:null, // 'Si' | 'No'
+    postStrategyText:'',
+    postF1MoreCoins:null,      // 'II' | 'ID' | 'DI' | 'DD' | 'Todas'
+    postF1LessCoins:null,      // 'II' | 'ID' | 'DI' | 'DD' | 'Todas'
+    postF2MoreCoins:null,      // idem para F2
+    postF2LessCoins:null,
+    postComment:''             // ← NUEVO: comentario final
   };
 
   function phaseCode(){ return state.phase==='practice'?'ENT':(state.phase==='main'?'F1':'F2'); }
@@ -215,7 +240,7 @@
                       if(state.phase==='phase2') return `<p class="center meta">Monedas obtenidas: <b>${state.coinsF2}</b></p>`;
                       return ''; }
 
-  // ===== Tema por fase: aplica clase en <body> cuando sea Fase 2 =====
+  // Tema por fase
   function applyPhaseTheme(){
     const isP2 = (state.phase === 'phase2');
     document.body.classList.toggle('phase2-theme', isP2);
@@ -241,7 +266,7 @@
         <label>Otro (Semestre):<input id="semestre_otro" type="text" placeholder="Especifica" style="display:none;"></label>
       </div>
       <div class="spacer"></div>
-      <div class="field" style="gap:14px;">
+      <div class="field" style="gap:14px%;">
         <label>Género:
           <select id="genero" required>
             <option value="" selected disabled>Selecciona</option>
@@ -283,7 +308,6 @@
 
   // (2) Instrucciones: A/B
   function renderInstructionsAB(){
-    // Instrucciones no usan tema Fase 2
     document.body.classList.remove('phase2-theme');
 
     screen.innerHTML=html`
@@ -385,7 +409,7 @@
     if(state.sessionStartMs===null) state.sessionStartMs=now();
     state.entStartMs=now();
 
-    applyPhaseTheme(); // ← asegura tema madera (sin clase phase2-theme)
+    applyPhaseTheme(); // madera
     initProgram(); renderFirst();
   }
 
@@ -399,13 +423,13 @@
     if(state.sessionStartMs===null) state.sessionStartMs=now();
     state.f1StartMs=now();
 
-    applyPhaseTheme(); // ← madera
+    applyPhaseTheme(); // madera
     initProgram(); renderFirst();
   }
 
   // Aviso Fase 2
   function renderPhase2Notice(){
-    document.body.classList.remove('phase2-theme'); // aún no estamos en Fase 2
+    document.body.classList.remove('phase2-theme'); // aún no F2
     screen.innerHTML=html`
       <h1 class="center">Aviso</h1>
       <p class="center">Ahora se agregó una pista para facilitar que ganes puntos, deberás descubrirla por tu cuenta</p>
@@ -427,7 +451,7 @@
     state.phase2_forbidden=(forcedIdx!==null)?forcedIdx:Math.floor(Math.random()*4);
     state.f2StartMs=now();
 
-    applyPhaseTheme(); // ← activa clase phase2-theme (rojo)
+    applyPhaseTheme(); // rojo
     initProgram(); renderFirst();
   }
 
@@ -527,7 +551,16 @@
       Semestre: state.semestre,
       ID: state.participantID,
       rt_primera: state.tmpRTPrimera ?? '',
-      rt_segunda: state.tmpRTSegunda ?? ''
+      rt_segunda: state.tmpRTSegunda ?? '',
+      Detecto_Regla: state.postRuleDetected ?? '',
+      Regla_Texto: state.postRuleText ?? '',
+      Detecto_Estrategia: state.postStrategyDetected ?? '',
+      Estrategia_Texto: state.postStrategyText ?? '',
+      Mas_Monedas_F1: state.postF1MoreCoins ?? '',
+      Menos_Monedas_F1: state.postF1LessCoins ?? '',
+      Mas_Monedas_F2: state.postF2MoreCoins ?? '',
+      Menos_Monedas_F2: state.postF2LessCoins ?? '',
+      Comentario: state.postComment ?? ''
     });
 
     const coinsTxt = (phase==='F1') ? state.coinsF1 : (phase==='F2' ? state.coinsF2 : null);
@@ -549,8 +582,471 @@
       }else{
         if(state.phase==='practice') renderPracticeEnd();
         else if(state.phase==='main') renderPhase2Notice();
-        else renderFinalEnd();
+        else renderRuleQuestion(); // al terminar F2 → preguntas
       }
+    };
+  }
+
+  // === Pregunta 1: Detección de regla ===
+  function renderRuleQuestion(){
+    screen.innerHTML = html`
+      <h2 class="center">Pregunta</h2>
+      <p class="center">¿Detectaste alguna regla en el juego?</p>
+      <div class="choices">
+        <button class="choice" id="yesBtn">Sí</button>
+        <button class="choice" id="noBtn">No</button>
+      </div>
+      <div id="ruleBox" style="display:none; margin-top:10px;">
+        <p class="center">¿Cuál?</p>
+        <div class="footer" style="flex-direction:column;">
+          <textarea id="ruleText" rows="4" placeholder="Escribe tu respuesta aquí..."></textarea>
+        </div>
+      </div>
+      <div class="footer" style="margin-top:14px;">
+        <button class="btn" id="ruleNext" disabled>Continuar</button>
+      </div>
+    `;
+
+    const yesBtn = document.getElementById('yesBtn');
+    const noBtn  = document.getElementById('noBtn');
+    const ruleBox = document.getElementById('ruleBox');
+    const ruleTxt = document.getElementById('ruleText');
+    const next = document.getElementById('ruleNext');
+
+    let sel = null; // 'Si' | 'No'
+
+    function updateUI(){
+      next.disabled = (sel===null);
+      yesBtn.classList.toggle('selected', sel==='Si');
+      noBtn.classList.toggle('selected', sel==='No');
+      ruleBox.style.display = (sel==='Si') ? '' : 'none';
+    }
+    yesBtn.onclick = ()=>{ sel='Si'; updateUI(); };
+    noBtn.onclick  = ()=>{ sel='No'; updateUI(); };
+
+    next.onclick = ()=>{
+      state.postRuleDetected = sel;
+      state.postRuleText = (sel==='Si') ? (ruleTxt.value || '') : '';
+      renderStrategyQuestion();
+    };
+
+    updateUI();
+  }
+
+  // === Pregunta 2: Estrategia ===
+  function renderStrategyQuestion(){
+    screen.innerHTML = html`
+      <h2 class="center">Pregunta</h2>
+      <p class="center">¿Seguiste alguna estrategia para escoger puertas?</p>
+      <div class="choices">
+        <button class="choice" id="yesBtn">Sí</button>
+        <button class="choice" id="noBtn">No</button>
+      </div>
+      <div id="stratBox" style="display:none; margin-top:10px;">
+        <p class="center">¿Cuál?</p>
+        <div class="footer" style="flex-direction:column;">
+          <textarea id="stratText" rows="4" placeholder="Escribe tu respuesta aquí..."></textarea>
+        </div>
+      </div>
+      <div class="footer" style="margin-top:14px;">
+        <button class="btn" id="stratNext" disabled>Continuar</button>
+      </div>
+    `;
+
+    const yesBtn = document.getElementById('yesBtn');
+    const noBtn  = document.getElementById('noBtn');
+    const stratBox = document.getElementById('stratBox');
+    const stratTxt = document.getElementById('stratText');
+    const next = document.getElementById('stratNext');
+
+    let sel = null; // 'Si' | 'No'
+
+    function updateUI(){
+      next.disabled = (sel===null);
+      yesBtn.classList.toggle('selected', sel==='Si');
+      noBtn.classList.toggle('selected', sel==='No');
+      stratBox.style.display = (sel==='Si') ? '' : 'none';
+    }
+    yesBtn.onclick = ()=>{ sel='Si'; updateUI(); };
+    noBtn.onclick  = ()=>{ sel='No'; updateUI(); };
+
+    next.onclick = ()=>{
+      state.postStrategyDetected = sel;
+      state.postStrategyText = (sel==='Si') ? (stratTxt.value || '') : '';
+      // Propaga respuestas previas a filas
+      for(const r of state.rows){
+        r.Detecto_Regla       = state.postRuleDetected ?? '';
+        r.Regla_Texto         = state.postRuleText ?? '';
+        r.Detecto_Estrategia  = state.postStrategyDetected ?? '';
+        r.Estrategia_Texto    = state.postStrategyText ?? '';
+      }
+      renderF1MoreCoinsQuestion();
+    };
+
+    updateUI();
+  }
+
+  // === Pregunta 3: ¿alguna puerta daba MÁS monedas en F1? ===
+  function renderF1MoreCoinsQuestion(){
+    document.body.classList.remove('phase2-theme'); // tema madera
+
+    screen.innerHTML = html`
+      <h2 class="center">Pregunta</h2>
+      <p class="center">En la primera parte, ¿consideras que alguna puerta daba <b>MÁS</b> monedas?</p>
+      <p class="center small meta">Selecciona la opción que consideres adecuada</p>
+      <div id="f1qArea" style="margin-top:8px;"></div>
+      <div class="choices">
+        <button class="choice" id="btnEqual">Todas daban igual</button>
+      </div>
+      <div class="footer">
+        <button class="btn" id="next" disabled>Continuar</button>
+      </div>
+    `;
+
+    const area = document.getElementById('f1qArea');
+    const btnEqual = document.getElementById('btnEqual');
+    const next = document.getElementById('next');
+
+    let primary = null;      // 'A' | 'B'
+    let subSel  = null;      // 'II' | 'ID' | 'DI' | 'DD'
+    let equal   = false;
+
+    function updateContinue(){ next.disabled = !(equal || subSel !== null); }
+
+    function renderPrimary(){
+      area.innerHTML = `
+        <div class="doors">
+          ${doorHTML('qA','',false)}
+          ${doorHTML('qB','',true)}
+        </div>
+      `;
+      const qA = document.getElementById('qA');
+      const qB = document.getElementById('qB');
+      qA.onclick = ()=>{ primary='A'; equal=false; btnEqual.classList.remove('selected'); renderSub(); updateContinue(); };
+      qB.onclick = ()=>{ primary='B'; equal=false; btnEqual.classList.remove('selected'); renderSub(); updateContinue(); };
+    }
+
+    function renderSub(){
+      area.innerHTML = `
+        <p class="center small meta">Si escogiste la puerta que no querías, puedes regresar a las principales</p>
+        <div class="footer"><button class="btn secondary" id="backMain">Regresar a las puertas principales</button></div>
+        ${subdoorsHTML(primary)}
+      `;
+      document.getElementById('backMain').onclick = ()=>{ primary=null; subSel=null; renderPrimary(); updateContinue(); };
+
+      const opt0 = document.getElementById('opt0');
+      const opt1 = document.getElementById('opt1');
+      function setSelected(which){
+        if(opt0) opt0.classList.remove('selected-instruction');
+        if(opt1) opt1.classList.remove('selected-instruction');
+        if(which===0 && opt0) opt0.classList.add('selected-instruction');
+        if(which===1 && opt1) opt1.classList.add('selected-instruction');
+      }
+      if (opt0) opt0.onclick = ()=>{
+        equal=false; btnEqual.classList.remove('selected');
+        subSel = (primary==='A') ? 'II' : 'DI';
+        setSelected(0); updateContinue();
+      };
+      if (opt1) opt1.onclick = ()=>{
+        equal=false; btnEqual.classList.remove('selected');
+        subSel = (primary==='A') ? 'ID' : 'DD';
+        setSelected(1); updateContinue();
+      };
+    }
+
+    btnEqual.onclick = ()=>{
+      equal = true; subSel = null;
+      btnEqual.classList.add('selected');
+      const o0 = document.getElementById('opt0'); const o1 = document.getElementById('opt1');
+      if(o0) o0.classList.remove('selected-instruction');
+      if(o1) o1.classList.remove('selected-instruction');
+      updateContinue();
+    };
+
+    next.onclick = ()=>{
+      state.postF1MoreCoins = equal ? 'Todas' : subSel;
+      for (const r of state.rows) r.Mas_Monedas_F1 = state.postF1MoreCoins ?? '';
+      renderF1LessCoinsQuestion();
+    };
+
+    renderPrimary(); updateContinue();
+  }
+
+  // === Pregunta 4: ¿alguna puerta daba MENOS monedas en F1? ===
+  function renderF1LessCoinsQuestion(){
+    document.body.classList.remove('phase2-theme'); // tema madera
+
+    screen.innerHTML = html`
+      <h2 class="center">Pregunta</h2>
+      <p class="center">En la primera parte, ¿consideras que alguna puerta daba <b>MENOS</b> monedas?</p>
+      <p class="center small meta">Selecciona la opción que consideres adecuada</p>
+      <div id="f1qAreaLess" style="margin-top:8px;"></div>
+      <div class="choices">
+        <button class="choice" id="btnEqualLess">Todas daban igual</button>
+      </div>
+      <div class="footer">
+        <button class="btn" id="nextLess" disabled>Continuar</button>
+      </div>
+    `;
+
+    const area = document.getElementById('f1qAreaLess');
+    const btnEqual = document.getElementById('btnEqualLess');
+    const next = document.getElementById('nextLess');
+
+    let primary = null; let subSel  = null; let equal   = false;
+
+    function updateContinue(){ next.disabled = !(equal || subSel !== null); }
+
+    function renderPrimary(){
+      area.innerHTML = `
+        <div class="doors">
+          ${doorHTML('qLA','',false)}
+          ${doorHTML('qLB','',true)}
+        </div>
+      `;
+      const qA = document.getElementById('qLA');
+      const qB = document.getElementById('qLB');
+      qA.onclick = ()=>{ primary='A'; equal=false; btnEqual.classList.remove('selected'); renderSub(); updateContinue(); };
+      qB.onclick = ()=>{ primary='B'; equal=false; btnEqual.classList.remove('selected'); renderSub(); updateContinue(); };
+    }
+
+    function renderSub(){
+      area.innerHTML = `
+        <p class="center small meta">Si escogiste la puerta que no querías, puedes regresar a las principales</p>
+        <div class="footer"><button class="btn secondary" id="backMainLess">Regresar a las puertas principales</button></div>
+        ${subdoorsHTML(primary)}
+      `;
+      document.getElementById('backMainLess').onclick = ()=>{ primary=null; subSel=null; renderPrimary(); updateContinue(); };
+
+      const opt0 = document.getElementById('opt0');
+      const opt1 = document.getElementById('opt1');
+      function setSelected(which){
+        if(opt0) opt0.classList.remove('selected-instruction');
+        if(opt1) opt1.classList.remove('selected-instruction');
+        if(which===0 && opt0) opt0.classList.add('selected-instruction');
+        if(which===1 && opt1) opt1.classList.add('selected-instruction');
+      }
+      if (opt0) opt0.onclick = ()=>{
+        equal=false; btnEqual.classList.remove('selected');
+        subSel = (primary==='A') ? 'II' : 'DI';
+        setSelected(0); updateContinue();
+      };
+      if (opt1) opt1.onclick = ()=>{
+        equal=false; btnEqual.classList.remove('selected');
+        subSel = (primary==='A') ? 'ID' : 'DD';
+        setSelected(1); updateContinue();
+      };
+    }
+
+    btnEqual.onclick = ()=>{
+      equal = true; subSel = null;
+      btnEqual.classList.add('selected');
+      const o0 = document.getElementById('opt0'); const o1 = document.getElementById('opt1');
+      if(o0) o0.classList.remove('selected-instruction');
+      if(o1) o1.classList.remove('selected-instruction');
+      updateContinue();
+    };
+
+    next.onclick = ()=>{
+      state.postF1LessCoins = equal ? 'Todas' : subSel;
+      for (const r of state.rows) r.Menos_Monedas_F1 = state.postF1LessCoins ?? '';
+      renderF2MoreCoinsQuestion(); // ← ahora vamos a las preguntas de F2
+    };
+
+    renderPrimary(); updateContinue();
+  }
+
+  // === Pregunta 5: ¿alguna puerta daba MÁS monedas en F2? (puertas rojas) ===
+  function renderF2MoreCoinsQuestion(){
+    // Forzar tema rojo de F2 para esta pregunta
+    document.body.classList.add('phase2-theme');
+
+    screen.innerHTML = html`
+      <h2 class="center">Pregunta</h2>
+      <p class="center">En la segunda parte, ¿consideras que alguna puerta daba <b>MÁS</b> monedas?</p>
+      <p class="center small meta">Selecciona la opción que consideres adecuada</p>
+      <div id="f2qAreaMore" style="margin-top:8px;"></div>
+      <div class="choices">
+        <button class="choice" id="btnEqualF2More">Todas daban igual</button>
+      </div>
+      <div class="footer">
+        <button class="btn" id="nextF2More" disabled>Continuar</button>
+      </div>
+    `;
+
+    const area = document.getElementById('f2qAreaMore');
+    const btnEqual = document.getElementById('btnEqualF2More');
+    const next = document.getElementById('nextF2More');
+
+    let primary = null; let subSel  = null; let equal   = false;
+
+    function updateContinue(){ next.disabled = !(equal || subSel !== null); }
+
+    function renderPrimary(){
+      area.innerHTML = `
+        <div class="doors">
+          ${doorHTML('qFA','',false)}
+          ${doorHTML('qFB','',true)}
+        </div>
+      `;
+      const qA = document.getElementById('qFA');
+      const qB = document.getElementById('qFB');
+      qA.onclick = ()=>{ primary='A'; equal=false; btnEqual.classList.remove('selected'); renderSub(); updateContinue(); };
+      qB.onclick = ()=>{ primary='B'; equal=false; btnEqual.classList.remove('selected'); renderSub(); updateContinue(); };
+    }
+
+    function renderSub(){
+      area.innerHTML = `
+        <p class="center small meta">Si escogiste la puerta que no querías, puedes regresar a las principales</p>
+        <div class="footer"><button class="btn secondary" id="backMainF2More">Regresar a las puertas principales</button></div>
+        ${subdoorsHTML(primary)}
+      `;
+      document.getElementById('backMainF2More').onclick = ()=>{ primary=null; subSel=null; renderPrimary(); updateContinue(); };
+
+      const opt0 = document.getElementById('opt0');
+      const opt1 = document.getElementById('opt1');
+      function setSelected(which){
+        if(opt0) opt0.classList.remove('selected-instruction');
+        if(opt1) opt1.classList.remove('selected-instruction');
+        if(which===0 && opt0) opt0.classList.add('selected-instruction');
+        if(which===1 && opt1) opt1.classList.add('selected-instruction');
+      }
+      if (opt0) opt0.onclick = ()=>{
+        equal=false; btnEqual.classList.remove('selected');
+        subSel = (primary==='A') ? 'II' : 'DI';
+        setSelected(0); updateContinue();
+      };
+      if (opt1) opt1.onclick = ()=>{
+        equal=false; btnEqual.classList.remove('selected');
+        subSel = (primary==='A') ? 'ID' : 'DD';
+        setSelected(1); updateContinue();
+      };
+    }
+
+    btnEqual.onclick = ()=>{
+      equal = true; subSel = null;
+      btnEqual.classList.add('selected');
+      const o0 = document.getElementById('opt0'); const o1 = document.getElementById('opt1');
+      if(o0) o0.classList.remove('selected-instruction');
+      if(o1) o1.classList.remove('selected-instruction');
+      updateContinue();
+    };
+
+    next.onclick = ()=>{
+      state.postF2MoreCoins = equal ? 'Todas' : subSel;
+      for (const r of state.rows) r.Mas_Monedas_F2 = state.postF2MoreCoins ?? '';
+      renderF2LessCoinsQuestion();
+    };
+
+    renderPrimary(); updateContinue();
+  }
+
+  // === Pregunta 6: ¿alguna puerta daba MENOS monedas en F2? (puertas rojas) ===
+  function renderF2LessCoinsQuestion(){
+    // Forzar tema rojo de F2 para esta pregunta
+    document.body.classList.add('phase2-theme');
+
+    screen.innerHTML = html`
+      <h2 class="center">Pregunta</h2>
+      <p class="center">En la segunda parte, ¿consideras que alguna puerta daba <b>MENOS</b> monedas?</p>
+      <p class="center small meta">Selecciona la opción que consideres adecuada</p>
+      <div id="f2qAreaLess" style="margin-top:8px;"></div>
+      <div class="choices">
+        <button class="choice" id="btnEqualF2Less">Todas daban igual</button>
+      </div>
+      <div class="footer">
+        <button class="btn" id="nextF2Less" disabled>Continuar</button>
+      </div>
+    `;
+
+    const area = document.getElementById('f2qAreaLess');
+    const btnEqual = document.getElementById('btnEqualF2Less');
+    const next = document.getElementById('nextF2Less');
+
+    let primary = null; let subSel  = null; let equal   = false;
+
+    function updateContinue(){ next.disabled = !(equal || subSel !== null); }
+
+    function renderPrimary(){
+      area.innerHTML = `
+        <div class="doors">
+          ${doorHTML('qF2LA','',false)}
+          ${doorHTML('qF2LB','',true)}
+        </div>
+      `;
+      const qA = document.getElementById('qF2LA');
+      const qB = document.getElementById('qF2LB');
+      qA.onclick = ()=>{ primary='A'; equal=false; btnEqual.classList.remove('selected'); renderSub(); updateContinue(); };
+      qB.onclick = ()=>{ primary='B'; equal=false; btnEqual.classList.remove('selected'); renderSub(); updateContinue(); };
+    }
+
+    function renderSub(){
+      area.innerHTML = `
+        <p class="center small meta">Si escogiste la puerta que no querías, puedes regresar a las principales</p>
+        <div class="footer"><button class="btn secondary" id="backMainF2Less">Regresar a las puertas principales</button></div>
+        ${subdoorsHTML(primary)}
+      `;
+      document.getElementById('backMainF2Less').onclick = ()=>{ primary=null; subSel=null; renderPrimary(); updateContinue(); };
+
+      const opt0 = document.getElementById('opt0');
+      const opt1 = document.getElementById('opt1');
+      function setSelected(which){
+        if(opt0) opt0.classList.remove('selected-instruction');
+        if(opt1) opt1.classList.remove('selected-instruction');
+        if(which===0 && opt0) opt0.classList.add('selected-instruction');
+        if(which===1 && opt1) opt1.classList.add('selected-instruction');
+      }
+      if (opt0) opt0.onclick = ()=>{
+        equal=false; btnEqual.classList.remove('selected');
+        subSel = (primary==='A') ? 'II' : 'DI';
+        setSelected(0); updateContinue();
+      };
+      if (opt1) opt1.onclick = ()=>{
+        equal=false; btnEqual.classList.remove('selected');
+        subSel = (primary==='A') ? 'ID' : 'DD';
+        setSelected(1); updateContinue();
+      };
+    }
+
+    btnEqual.onclick = ()=>{
+      equal = true; subSel = null;
+      btnEqual.classList.add('selected');
+      const o0 = document.getElementById('opt0'); const o1 = document.getElementById('opt1');
+      if(o0) o0.classList.remove('selected-instruction');
+      if(o1) o1.classList.remove('selected-instruction');
+      updateContinue();
+    };
+
+    next.onclick = ()=>{
+      state.postF2LessCoins = equal ? 'Todas' : subSel;
+      for (const r of state.rows) r.Menos_Monedas_F2 = state.postF2LessCoins ?? '';
+      renderCommentScreen(); // ← NUEVO: antes del fin, pedir comentario
+    };
+
+    renderPrimary(); updateContinue();
+  }
+
+  // ===== NUEVO: Lámina de COMENTARIO =====
+  function renderCommentScreen(){
+    screen.innerHTML = html`
+      <h2 class="center">Comentario</h2>
+      <p class="center">Si quieres agregar un comentario, puedes hacerlo debajo. Si no, oprime Continuar</p>
+      <div class="footer" style="flex-direction:column;gap:10px;">
+        <textarea id="commentBox" rows="4" placeholder="Escribe tu comentario (opcional)..."></textarea>
+      </div>
+      <div class="footer">
+        <button class="btn" id="commentNext">Continuar</button>
+      </div>
+    `;
+    const box = document.getElementById('commentBox');
+    // si ya existía algo (volver atrás), repoblar
+    if (state.postComment) box.value = state.postComment;
+
+    document.getElementById('commentNext').onclick = ()=>{
+      state.postComment = (box.value || '').trim();
+      // Propagar a filas (para CSV/JSON/Sheets)
+      for (const r of state.rows) r.Comentario = state.postComment;
+      renderFinalEnd();
     };
   }
 
