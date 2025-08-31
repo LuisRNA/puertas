@@ -161,6 +161,14 @@
   window.addEventListener('pagehide',()=>{ if(!__rowsSent&&state.rows&&state.rows.length){ try{ const b=new Blob([JSON.stringify(state.rows)],{type:'application/json'}); navigator.sendBeacon(SHEETS_URL,b); __rowsSent=true;}catch(_){}}});
 
   /* ====== Utilidades ====== */
+
+  // === Marca de tiempo local: YYYYMMDD_HHMMSS ===
+  function timestampStamp(){
+    const d = new Date();
+    const p = n => String(n).padStart(2,'0');
+    return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+  }
+    
   function getParam(name, fallback=null){ const url=new URL(window.location.href); const v=url.searchParams.get(name); return v!==null?v:fallback; }
   function shuffle(arr){ const a=arr.slice(); for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
   function now(){ return performance.now(); }
@@ -1094,22 +1102,36 @@
 
   // Panel admin
   function renderAdminPanel(){
-    screen.innerHTML=html`
-      <h2 class="center">Panel de datos</h2>
-      <div class="footer">
-        <button class="btn" id="dlcsv">Descargar CSV</button>
-        <button class="btn secondary" id="dljson">Descargar JSON</button>
-        <button class="btn" id="back">Volver</button>
-      </div>
-      <p class="center small meta">* Este panel no es visible para participantes sin contraseña.</p>
-    `;
-    document.getElementById('dlcsv').onclick=()=>download('datos_puertas.csv', toCSVOrdered(state.rows, CSV_HEADERS), 'text/csv;charset=utf-8');
-    document.getElementById('dljson').onclick=()=>download('datos_puertas.json', JSON.stringify(state.rows,null,2), 'application/json');
-    document.getElementById('back').onclick=()=>renderFinalSummary();
-  }
+  screen.innerHTML=html`
+    <h2 class="center">Panel de datos</h2>
+    <div class="footer">
+      <button class="btn" id="dlcsv">Descargar CSV</button>
+      <button class="btn secondary" id="dljson">Descargar JSON</button>
+      <button class="btn" id="back">Volver</button>
+    </div>
+    <p class="center small meta">* Este panel no es visible para participantes sin contraseña.</p>
+  `;
+
+  const pid = (state.participantID ?? 'sinID');
+  const makeName = (ext) => `datos_puertas_${pid}_${timestampStamp()}.${ext}`;
+
+  document.getElementById('dlcsv').onclick = () => {
+    const csv = toCSVOrdered(state.rows, CSV_HEADERS);
+    download(makeName('csv'), csv, 'text/csv;charset=utf-8');
+  };
+
+  document.getElementById('dljson').onclick = () => {
+    const json = JSON.stringify(state.rows, null, 2);
+    download(makeName('json'), json, 'application/json');
+  };
+
+  document.getElementById('back').onclick = () => renderFinalSummary();
+}
+
 
   // Inicio
   window.addEventListener('load',()=>{ renderDemographics(); });
   </script>
 </body>
 </html>
+
