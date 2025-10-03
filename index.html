@@ -72,7 +72,7 @@
     }
     .door:hover { transform: translateY(-2px); filter: saturate(1.02); }
     .door:active { transform: translateY(0); }
-    .door.alt { } /* sin diferencias */
+    .door.alt { }
     .door.selected-instruction {
       border-color: var(--ok);
       box-shadow: var(--instruction-glow);
@@ -169,7 +169,6 @@
     return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
   }
 
-
   function getParam(name, fallback=null){ const url=new URL(window.location.href); const v=url.searchParams.get(name); return v!==null?v:fallback; }
   function shuffle(arr){ const a=arr.slice(); for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
   function now(){ return performance.now(); }
@@ -178,16 +177,16 @@
   const CSV_HEADERS=['Num_Ensayo','Tiempo_Global','Tiempo_ENT','Tiempo_F1','Tiempo_F2','Respuesta','Res_Correcta','Fase','Grupo','Puerta_F2','Edad','Genero','Semestre','ID','rt_primera','rt_segunda','Detecto_Regla','Regla_Texto','Detecto_Estrategia','Estrategia_Texto','Mas_Monedas_F1','Menos_Monedas_F1','Mas_Monedas_F2','Menos_Monedas_F2','Comentario'];
   function toCSVOrdered(rows, headers){ if(!rows.length) return headers.join(','); const esc=v=>{ if(v===null||v===undefined) return ''; const s=String(v).replaceAll('"','""'); return /[",\n]/.test(s)?'"'+s+'"':s; }; const lines=[headers.join(',')]; for(const r of rows) lines.push(headers.map(h=>esc(r[h])).join(',')); return lines.join('\n'); }
 
-// Cuenta elecciones por secuencia en una fase dada ('F1' o 'F2')
-function countSeqsByPhase(fase){
-  const counts = { II:0, ID:0, DI:0, DD:0 };
-  for (const r of state.rows){
-    if (r.Fase === fase && (r.Respuesta in counts)){
-      counts[r.Respuesta] += 1;
+  // Cuenta elecciones por secuencia en una fase dada ('F1' o 'F2')
+  function countSeqsByPhase(fase){
+    const counts = { II:0, ID:0, DI:0, DD:0 };
+    for (const r of state.rows){
+      if (r.Fase === fase && (r.Respuesta in counts)){
+        counts[r.Respuesta] += 1;
+      }
     }
+    return counts;
   }
-  return counts;
-}
 
   /* ====== Componentes ====== */
   function doorHTML(id,label,alt=false){ return `
@@ -203,8 +202,8 @@ function countSeqsByPhase(fase){
 
   /* ====== Config experimento ====== */
   const URL_MODE=(getParam('mode','noreplacement').toLowerCase()==='replacement')?'replacement':'noreplacement';
-  const URL_TRIALS=Math.max(1, parseInt(getParam('trials','28'))||28);
-  const PRACTICE_TRIALS=10;
+  const URL_TRIALS=Math.max(1, parseInt(getParam('trials','2'))||2);
+  const PRACTICE_TRIALS=8;
   const SEQS=['II','ID','DI','DD'];
   const DOOR_ANIM_MS=700;
 
@@ -234,8 +233,16 @@ function countSeqsByPhase(fase){
     postF1LessCoins:null,      // 'II' | 'ID' | 'DI' | 'DD' | 'Todas'
     postF2MoreCoins:null,      // idem para F2
     postF2LessCoins:null,
-    postComment:''             // ← NUEVO: comentario final
+    postComment:''             // comentario final
   };
+
+  // === Participante demo (sin formulario) ===
+  function initDemoParticipant(){
+    state.edad = 0;
+    state.genero = 'NA';
+    state.semestre = 'NA';
+    state.participantID = state.participantID || Math.floor(100000 + Math.random()*900000);
+  }
 
   function phaseCode(){ return state.phase==='practice'?'ENT':(state.phase==='main'?'F1':'F2'); }
   function groupLabel(){ return state.programMode==='replacement'?'Reemplazo':'No_Reemplazo'; }
@@ -267,64 +274,6 @@ function countSeqsByPhase(fase){
   }
 
   /* ====== Pantallas ====== */
-
-  // (1) Demográficos
-  function renderDemographics(){
-    screen.innerHTML=html`
-      <h1 class="center">¡Bienvenida/o al juego de puertas!</h1>
-      <div class="spacer"></div>
-      <div class="field" style="gap:14px;">
-        <label>Edad:<input id="edad" type="number" min="1" max="99" placeholder="18" required></label>
-        <label>Semestre:
-          <select id="semestre" required>
-            <option value="" selected disabled>Selecciona</option>
-            <option value="1ero">1ero</option><option value="3ro">3ro</option>
-            <option value="5to">5to</option><option value="7mo">7mo</option>
-            <option value="otro">otro</option>
-          </select>
-        </label>
-        <label>Otro (Semestre):<input id="semestre_otro" type="text" placeholder="Especifica" style="display:none;"></label>
-      </div>
-      <div class="spacer"></div>
-      <div class="field" style="gap:14px%;">
-        <label>Género:
-          <select id="genero" required>
-            <option value="" selected disabled>Selecciona</option>
-            <option value="masculino">masculino</option><option value="femenino">femenino</option>
-            <option value="otro">otro</option>
-          </select>
-        </label>
-        <label>Otro (Género):<input id="genero_otro" type="text" placeholder="Especifica" style="display:none;"></label>
-      </div>
-      <div class="spacer"></div>
-      <div class="footer"><button class="btn" id="continuar" disabled>Continuar</button></div>
-      <p class="center small meta">* Todos los campos son obligatorios. “Otro” requiere especificar.</p>
-    `;
-    const edad=document.getElementById('edad');
-    const semestre=document.getElementById('semestre');
-    const semestre_otro=document.getElementById('semestre_otro');
-    const genero=document.getElementById('genero');
-    const genero_otro=document.getElementById('genero_otro');
-    const btn=document.getElementById('continuar');
-
-    function toggleOtros(){ semestre_otro.style.display=(semestre.value==='otro')?'':'none'; genero_otro.style.display=(genero.value==='otro')?'':'none'; }
-    function isValid(){ const e=parseInt(edad.value,10); const sem=semestre.value; const gen=genero.value;
-      const semOk=(sem!=='otro')||(semestre_otro.value.trim().length>0);
-      const genOk=(gen!=='otro')||(genero_otro.value.trim().length>0);
-      const edadOk=Number.isFinite(e)&&e>=1&&e<=99; return edadOk&&!!sem&&!!gen&&semOk&&genOk; }
-    function updateUI(){ toggleOtros(); btn.disabled=!isValid(); }
-    [edad,semestre,semestre_otro,genero,genero_otro].forEach(el=>{el.addEventListener('input',updateUI);el.addEventListener('change',updateUI);});
-    updateUI();
-
-    btn.addEventListener('click',()=>{
-      if(!isValid()) return;
-      state.edad=parseInt(edad.value,10);
-      state.semestre=semestre.value==='otro'?semestre_otro.value.trim():semestre.value;
-      state.genero=genero.value==='otro'?genero_otro.value.trim():genero.value;
-      state.participantID=Math.floor(100000+Math.random()*900000);
-      renderInstructionsAB();
-    });
-  }
 
   // (2) Instrucciones: A/B
   function renderInstructionsAB(){
@@ -597,14 +546,14 @@ function countSeqsByPhase(fase){
       </div>
     `;
     document.getElementById('next').onclick=()=>{
-      if(state.trial < state.maxTrials){
-        renderFirst();
-      }else{
-        if(state.phase==='practice') renderPracticeEnd();
-        else if(state.phase==='main') renderPhase2Notice();
-        else renderRuleQuestion(); // al terminar F2 → preguntas
-      }
-    };
+  if(state.trial < state.maxTrials){
+    renderFirst();
+  }else{
+    if(state.phase==='practice') renderPracticeEnd();
+    else if(state.phase==='main') renderPhase2Notice();
+    else renderFinalEnd(); // al terminar F2 → ir directo al resumen final
+  }
+};
   }
 
   // === Pregunta 1: Detección de regla ===
@@ -1040,13 +989,13 @@ function countSeqsByPhase(fase){
     next.onclick = ()=>{
       state.postF2LessCoins = equal ? 'Todas' : subSel;
       for (const r of state.rows) r.Menos_Monedas_F2 = state.postF2LessCoins ?? '';
-      renderCommentScreen(); // ← NUEVO: antes del fin, pedir comentario
+      renderCommentScreen(); // ← antes del fin, pedir comentario
     };
 
     renderPrimary(); updateContinue();
   }
 
-  // ===== NUEVO: Lámina de COMENTARIO =====
+  // ===== Lámina de COMENTARIO =====
   function renderCommentScreen(){
     screen.innerHTML = html`
       <h2 class="center">Comentario</h2>
@@ -1059,12 +1008,10 @@ function countSeqsByPhase(fase){
       </div>
     `;
     const box = document.getElementById('commentBox');
-    // si ya existía algo (volver atrás), repoblar
     if (state.postComment) box.value = state.postComment;
 
     document.getElementById('commentNext').onclick = ()=>{
       state.postComment = (box.value || '').trim();
-      // Propagar a filas (para CSV/JSON/Sheets)
       for (const r of state.rows) r.Comentario = state.postComment;
       renderFinalEnd();
     };
@@ -1083,39 +1030,38 @@ function countSeqsByPhase(fase){
 
   // Fin total
   function renderFinalEnd(){ sendToSheets(state.rows); renderFinalSummary(); }
- function renderFinalSummary(){
-  // Conteos por secuencia
-  const cF1 = countSeqsByPhase('F1');
-  const cF2 = countSeqsByPhase('F2');
+  function renderFinalSummary(){
+    // Conteos por secuencia
+    const cF1 = countSeqsByPhase('F1');
+    const cF2 = countSeqsByPhase('F2');
 
-  screen.innerHTML = html`
-    <h2 class="center">Fin</h2>
-    <p class="center">Monedas obtenidas en la primera parte: <b>${state.coinsF1}</b></p>
-    <p class="center">Monedas obtenidas en la segunda parte: <b>${state.coinsF2}</b></p>
+    screen.innerHTML = html`
+      <h2 class="center">Fin</h2>
+      <p class="center">Monedas obtenidas en la primera parte: <b>${state.coinsF1}</b></p>
+      <p class="center">Monedas obtenidas en la segunda parte: <b>${state.coinsF2}</b></p>
 
-    <div class="spacer"></div>
-    <h3 class="center">Resumen de elecciones — Primera parte</h3>
-    <p class="center small">II: <b>${cF1.II}</b></p>
-    <p class="center small">ID: <b>${cF1.ID}</b></p>
-    <p class="center small">DI: <b>${cF1.DI}</b></p>
-    <p class="center small">DD: <b>${cF1.DD}</b></p>
+      <div class="spacer"></div>
+      <h3 class="center">Resumen de elecciones — Primera parte</h3>
+      <p class="center small">II: <b>${cF1.II}</b></p>
+      <p class="center small">ID: <b>${cF1.ID}</b></p>
+      <p class="center small">DI: <b>${cF1.DI}</b></p>
+      <p class="center small">DD: <b>${cF1.DD}</b></p>
 
-    <div class="spacer"></div>
-    <h3 class="center">Resumen de elecciones — Segunda parte</h3>
-    <p class="center small">II: <b>${cF2.II}</b></p>
-    <p class="center small">ID: <b>${cF2.ID}</b></p>
-    <p class="center small">DI: <b>${cF2.DI}</b></p>
-    <p class="center small">DD: <b>${cF2.DD}</b></p>
+      <div class="spacer"></div>
+      <h3 class="center">Resumen de elecciones — Segunda parte</h3>
+      <p class="center small">II: <b>${cF2.II}</b></p>
+      <p class="center small">ID: <b>${cF2.ID}</b></p>
+      <p class="center small">DI: <b>${cF2.DI}</b></p>
+      <p class="center small">DD: <b>${cF2.DD}</b></p>
 
-    <div class="footer">
-      <button class="btn" id="admin">Área de datos</button>
-    </div>
-    <p class="center small meta">* Acceso privado para quien recolecta los datos.</p>
-  `;
+      <div class="footer">
+        <button class="btn" id="admin">Área de datos</button>
+      </div>
+      <p class="center small meta">* Acceso privado para quien recolecta los datos.</p>
+    `;
 
-  document.getElementById('admin').onclick = () => renderAdminGate();
-}
-
+    document.getElementById('admin').onclick = () => renderAdminGate();
+  }
 
   // Gate admin
   function renderAdminGate(){
@@ -1137,35 +1083,43 @@ function countSeqsByPhase(fase){
 
   // Panel admin
   function renderAdminPanel(){
-  screen.innerHTML=html`
-    <h2 class="center">Panel de datos</h2>
-    <div class="footer">
-      <button class="btn" id="dlcsv">Descargar CSV</button>
-      <button class="btn secondary" id="dljson">Descargar JSON</button>
-      <button class="btn" id="back">Volver</button>
-    </div>
-    <p class="center small meta">* Este panel no es visible para participantes sin contraseña.</p>
-  `;
+    screen.innerHTML=html`
+      <h2 class="center">Panel de datos</h2>
+      <div class="footer">
+        <button class="btn" id="dlcsv">Descargar CSV</button>
+        <button class="btn secondary" id="dljson">Descargar JSON</button>
+        <button class="btn" id="back">Volver</button>
+      </div>
+      <p class="center small meta">* Este panel no es visible para participantes sin contraseña.</p>
+    `;
 
-  const pid = (state.participantID ?? 'sinID');
-  const makeName = (ext) => `datos_puertas_${pid}_${timestampStamp()}.${ext}`;
+    const pid = (state.participantID ?? 'sinID');
+    const makeName = (ext) => `datos_puertas_${pid}_${timestampStamp()}.${ext}`;
 
-  document.getElementById('dlcsv').onclick = () => {
-    const csv = toCSVOrdered(state.rows, CSV_HEADERS);
-    download(makeName('csv'), csv, 'text/csv;charset=utf-8');
-  };
+    document.getElementById('dlcsv').onclick = () => {
+      const csv = toCSVOrdered(state.rows, CSV_HEADERS);
+      download(makeName('csv'), csv, 'text/csv;charset=utf-8');
+    };
 
-  document.getElementById('dljson').onclick = () => {
-    const json = JSON.stringify(state.rows, null, 2);
-    download(makeName('json'), json, 'application/json');
-  };
+    document.getElementById('dljson').onclick = () => {
+      const json = JSON.stringify(state.rows, null, 2);
+      download(makeName('json'), json, 'application/json');
+    };
 
-  document.getElementById('back').onclick = () => renderFinalSummary();
-}
+    document.getElementById('back').onclick = () => renderFinalSummary();
+  }
 
-
-  // Inicio
-  window.addEventListener('load',()=>{ renderDemographics(); });
+  // Arranque sin formulario: inicializa demo y va a Instrucciones
+  window.addEventListener('load', () => {
+    try {
+      initDemoParticipant();
+      renderInstructionsAB();
+    } catch (e) {
+      console.error('Error de arranque:', e);
+      const root = document.getElementById('screen');
+      if (root) root.innerHTML = `<pre style="white-space:pre-wrap">${e && e.message ? e.message : e}</pre>`;
+    }
+  });
   </script>
 </body>
 </html>
